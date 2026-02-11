@@ -1,646 +1,530 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
+  Tooltip,
+  ResponsiveContainer,
 } from 'recharts';
 import {
-  ArrowDownToLine,
-  CalendarClock,
-  ChevronDown,
-  ChevronUp,
   Database,
-  ExternalLink,
-  Play,
-  RefreshCcw,
-  Search,
-  SlidersHorizontal,
-  Terminal,
+  Activity,
   Zap,
+  Clock,
+  ArrowUpRight,
+  Search,
+  Download,
+  Play,
+  Radar,
+  Calendar,
+  LayoutDashboard,
+  Briefcase,
+  BarChart3,
+  Globe,
+  Settings,
+  BookOpen,
 } from 'lucide-react';
-
-import { MetricCard } from '@/components/stat-card';
-import { StatusPill } from '@/components/status-pill';
-import { Skeleton } from '@/components/skeleton';
-import {
-  type DomainPoint,
-  type HistoryResponse,
-  type ItemListResponse,
-  type Schedule,
-  type ScrapeStatus,
-  type SummaryResponse,
-  type TrendingResponse,
-} from '@/lib/types';
-import { apiFetch, cn, formatDate } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 /* ─────────────────────────────────────────────────────────
- * ANIMATION STORYBOARD — Dashboard Entrance Sequence
+ * ANIMATION STORYBOARD
  *
- *    0ms   page mount, grid overlay fades in
- *   60ms   header rises into view, glow-top reveals
- *  140ms   metric cards stagger in (4x, 80ms apart)
- *  460ms   signal feed + source map charts rise
- *  600ms   data table + sidebar panels appear
- *  800ms   all settle — hover interactions active
+ *    0ms   page mount, sidebar visible
+ *   80ms   first stat card fades in
+ *  140ms   second stat card
+ *  200ms   third stat card
+ *  260ms   fourth stat card
+ *  360ms   chart + jobs section appears
+ *  460ms   results table appears
+ *  560ms   bottom sections appear
+ *  700ms   all settled, interactions active
  * ───────────────────────────────────────────────────────── */
-const TIMING = {
-  header:     0,
-  metrics:    80,     // stagger per card
-  charts:     80,     // after metrics row
-  chartRight: 130,    // source map offset
-  table:      200,    // data feed
-  sidebar:    240,    // history + scheduler
-} as const;
 
-const TOPIC_COLORS = [
-  'oklch(0.78 0.16 195)',
-  'oklch(0.80 0.19 150)',
-  'oklch(0.72 0.20 290)',
-  'oklch(0.78 0.15 75)',
+// ═══════════════════════════════════════════════════════════
+// DEMO DATA
+// ═══════════════════════════════════════════════════════════
+
+const STATS = [
+  { label: 'Records Scraped', value: '148,392', change: '+12.3%', positive: true, icon: Database },
+  { label: 'Active Jobs', value: '12', change: '+2 this week', positive: true, icon: Activity },
+  { label: 'Success Rate', value: '99.2%', change: '+0.3%', positive: true, icon: Zap },
+  { label: 'Avg Response', value: '3.2s', change: '-0.4s faster', positive: true, icon: Clock },
 ];
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000';
+const VOLUME_DATA = [
+  { day: 'Mon', records: 18200 },
+  { day: 'Tue', records: 22400 },
+  { day: 'Wed', records: 19800 },
+  { day: 'Thu', records: 24100 },
+  { day: 'Fri', records: 21300 },
+  { day: 'Sat', records: 16700 },
+  { day: 'Sun', records: 25800 },
+];
 
-function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: string | number; color: string }>; label?: string }) {
-  if (!active || !payload || payload.length === 0) {
-    return null;
-  }
+const JOBS: Array<{
+  name: string;
+  url: string;
+  status: 'running' | 'completed' | 'scheduled';
+  lastRun: string;
+  records: number;
+}> = [
+  { name: 'HN Front Page', url: 'news.ycombinator.com', status: 'running', lastRun: '2 min ago', records: 34521 },
+  { name: 'Reddit r/programming', url: 'reddit.com', status: 'completed', lastRun: '14 min ago', records: 28903 },
+  { name: 'Product Hunt Daily', url: 'producthunt.com', status: 'scheduled', lastRun: '1h ago', records: 12847 },
+  { name: 'Dev.to Articles', url: 'dev.to', status: 'completed', lastRun: '22 min ago', records: 41293 },
+  { name: 'GitHub Trending', url: 'github.com', status: 'completed', lastRun: '35 min ago', records: 18472 },
+  { name: 'TechCrunch Feed', url: 'techcrunch.com', status: 'scheduled', lastRun: '2h ago', records: 12356 },
+];
 
+const RESULTS = [
+  { id: 1, title: 'Show HN: FastDB — A lightweight database that handles 1M writes/sec', source: 'news.ycombinator.com', points: 342, comments: 127, time: '2h ago' },
+  { id: 2, title: 'GPT-5 Benchmarks Show 3x Improvement in Reasoning Tasks', source: 'news.ycombinator.com', points: 891, comments: 453, time: '3h ago' },
+  { id: 3, title: 'Why We Migrated from Kubernetes to Bare Metal and Saved $2M/year', source: 'reddit.com', points: 567, comments: 234, time: '3h ago' },
+  { id: 4, title: 'Rust 2025 Edition: Everything You Need to Know', source: 'dev.to', points: 234, comments: 89, time: '4h ago' },
+  { id: 5, title: 'The State of WebAssembly in 2025: A Comprehensive Survey', source: 'news.ycombinator.com', points: 445, comments: 167, time: '5h ago' },
+  { id: 6, title: 'Building a Real-Time Data Pipeline with Kafka and Flink', source: 'dev.to', points: 189, comments: 45, time: '5h ago' },
+  { id: 7, title: 'Startup Raises $50M to Reinvent Browser Developer Tools', source: 'techcrunch.com', points: 312, comments: 198, time: '6h ago' },
+  { id: 8, title: 'PostgreSQL 18 Preview: Native Columnar Storage Engine', source: 'news.ycombinator.com', points: 678, comments: 234, time: '7h ago' },
+  { id: 9, title: 'Ask HN: What Are You Working On This Weekend?', source: 'news.ycombinator.com', points: 156, comments: 342, time: '8h ago' },
+  { id: 10, title: 'A Comprehensive Guide to Edge Computing Architecture', source: 'reddit.com', points: 423, comments: 112, time: '9h ago' },
+];
+
+const DOMAINS = [
+  { domain: 'news.ycombinator.com', count: 34521 },
+  { domain: 'reddit.com', count: 28903 },
+  { domain: 'dev.to', count: 22847 },
+  { domain: 'github.com', count: 18472 },
+  { domain: 'techcrunch.com', count: 12356 },
+];
+
+const SCHEDULE: Array<{
+  name: string;
+  interval: string;
+  nextRun: string;
+  active: boolean;
+}> = [
+  { name: 'HN Front Page', interval: 'Every 15 min', nextRun: '2:45 PM', active: true },
+  { name: 'Reddit r/programming', interval: 'Every 30 min', nextRun: '3:00 PM', active: true },
+  { name: 'Product Hunt Daily', interval: 'Daily at 9 AM', nextRun: 'Tomorrow', active: false },
+  { name: 'Dev.to Articles', interval: 'Every 20 min', nextRun: '2:50 PM', active: true },
+  { name: 'GitHub Trending', interval: 'Every 1 hour', nextRun: '3:30 PM', active: true },
+  { name: 'TechCrunch Feed', interval: 'Every 2 hours', nextRun: '4:00 PM', active: false },
+];
+
+const NAV = [
+  { label: 'Dashboard', icon: LayoutDashboard, active: true },
+  { label: 'Jobs', icon: Briefcase, active: false },
+  { label: 'Analytics', icon: BarChart3, active: false },
+  { label: 'Sources', icon: Globe, active: false },
+  { label: 'Schedule', icon: Calendar, active: false },
+  { label: 'History', icon: Clock, active: false },
+];
+
+const NAV_BOTTOM = [
+  { label: 'Settings', icon: Settings },
+  { label: 'Docs', icon: BookOpen },
+];
+
+const MAX_DOMAIN_COUNT = Math.max(...DOMAINS.map((d) => d.count));
+
+// ═══════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════
+
+const STATUS_STYLES = {
+  running: { color: 'bg-emerald-500', pulse: true },
+  completed: { color: 'bg-emerald-500', pulse: false },
+  scheduled: { color: 'bg-zinc-500', pulse: false },
+} as const;
+
+function StatusDot({ status }: { status: keyof typeof STATUS_STYLES }) {
+  const s = STATUS_STYLES[status];
   return (
-    <div className="rounded-lg border border-accent/20 bg-surface/95 px-3 py-2 shadow-glow-sm backdrop-blur-md">
-      <p className="font-mono text-[10px] uppercase tracking-wider text-accent/70">{label}</p>
-      <div className="mt-1 space-y-0.5">
-        {payload.map((entry) => (
-          <p key={entry.name} className="flex items-center gap-2 text-xs" style={{ color: entry.color }}>
-            <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: entry.color, boxShadow: `0 0 6px ${entry.color}` }} />
-            <span className="text-muted">{entry.name}</span>
-            <span className="data-mono ml-auto font-semibold">{entry.value}</span>
-          </p>
-        ))}
-      </div>
+    <span className="relative flex h-2 w-2">
+      {s.pulse && (
+        <span className={cn('absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping', s.color)} />
+      )}
+      <span className={cn('relative inline-flex h-2 w-2 rounded-full', s.color)} />
+    </span>
+  );
+}
+
+function ChartTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ value: number }>;
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 shadow-lg">
+      <p className="text-[11px] text-[var(--text-muted)]">{label}</p>
+      <p className="font-display text-sm font-semibold text-[var(--text)]">
+        {payload[0].value.toLocaleString()} records
+      </p>
     </div>
   );
 }
 
-function SectionHeader({ icon: Icon, title, subtitle }: { icon: React.ElementType; title: string; subtitle: string }) {
-  return (
-    <div className="mb-4 flex items-start gap-3">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-accent/20 bg-accent/5">
-        <Icon className="h-4 w-4 text-accent" />
-      </div>
-      <div>
-        <h2 className="font-display text-base font-semibold tracking-tight text-text">{title}</h2>
-        <p className="section-label mt-0.5">{subtitle}</p>
-      </div>
-    </div>
-  );
-}
+// ═══════════════════════════════════════════════════════════
+// MAIN DASHBOARD
+// ═══════════════════════════════════════════════════════════
 
-export default function DashboardPage() {
-  const [summary, setSummary] = useState<SummaryResponse | null>(null);
-  const [trending, setTrending] = useState<TrendingResponse | null>(null);
-  const [domains, setDomains] = useState<DomainPoint[]>([]);
-  const [status, setStatus] = useState<ScrapeStatus | null>(null);
-  const [schedule, setSchedule] = useState<Schedule | null>(null);
-  const [history, setHistory] = useState<HistoryResponse | null>(null);
-  const [items, setItems] = useState<ItemListResponse | null>(null);
-
-  const [bootLoading, setBootLoading] = useState(true);
-  const [tableLoading, setTableLoading] = useState(true);
-  const [isRunning, setIsRunning] = useState(false);
-  const [scheduleSaving, setScheduleSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const [searchInput, setSearchInput] = useState('');
+export default function Dashboard() {
   const [search, setSearch] = useState('');
-  const [sourceFilter, setSourceFilter] = useState('all');
-  const [sortBy, setSortBy] = useState<'timestamp' | 'points' | 'comments' | 'title'>('timestamp');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [intervalMinutes, setIntervalMinutes] = useState(15);
 
-  const loadCoreData = useCallback(async () => {
-    try {
-      const [summaryRes, trendsRes, domainsRes, statusRes, historyRes, scheduleRes] = await Promise.all([
-        apiFetch<SummaryResponse>('/analytics/summary'),
-        apiFetch<TrendingResponse>('/analytics/trending'),
-        apiFetch<DomainPoint[]>('/analytics/domains'),
-        apiFetch<ScrapeStatus>('/scrape/status'),
-        apiFetch<HistoryResponse>('/history?limit=18'),
-        apiFetch<Schedule>('/schedule'),
-      ]);
-
-      setSummary(summaryRes);
-      setTrending(trendsRes);
-      setDomains(domainsRes);
-      setStatus(statusRes);
-      setHistory(historyRes);
-      setSchedule(scheduleRes);
-      setIntervalMinutes(scheduleRes.interval_minutes);
-      setError(null);
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Failed to load dashboard');
-    } finally {
-      setBootLoading(false);
-    }
-  }, []);
-
-  const loadItems = useCallback(async () => {
-    setTableLoading(true);
-    try {
-      const params = new URLSearchParams({
-        sort_by: sortBy,
-        sort_order: sortOrder,
-        limit: '40',
-        offset: '0',
-      });
-
-      if (search.trim()) {
-        params.set('search', search.trim());
-      }
-
-      if (sourceFilter !== 'all') {
-        params.set('source', sourceFilter);
-      }
-
-      const response = await apiFetch<ItemListResponse>(`/items?${params.toString()}`);
-      setItems(response);
-      setError(null);
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Failed to load scraped items');
-    } finally {
-      setTableLoading(false);
-    }
-  }, [search, sourceFilter, sortBy, sortOrder]);
-
-  useEffect(() => {
-    loadCoreData();
-  }, [loadCoreData]);
-
-  useEffect(() => {
-    const debounce = window.setTimeout(() => setSearch(searchInput), 260);
-    return () => window.clearTimeout(debounce);
-  }, [searchInput]);
-
-  useEffect(() => {
-    loadItems();
-  }, [loadItems]);
-
-  useEffect(() => {
-    const ticker = window.setInterval(async () => {
-      try {
-        const statusRes = await apiFetch<ScrapeStatus>('/scrape/status');
-        setStatus(statusRes);
-      } catch {
-        // keep the previous state if polling fails
-      }
-    }, 5000);
-
-    return () => window.clearInterval(ticker);
-  }, []);
-
-  const runScrape = async () => {
-    setIsRunning(true);
-    try {
-      await apiFetch('/scrape/run', { method: 'POST' });
-      await Promise.all([loadCoreData(), loadItems()]);
-    } catch (runError) {
-      setError(runError instanceof Error ? runError.message : 'Failed to trigger scrape');
-    } finally {
-      setIsRunning(false);
-    }
-  };
-
-  const updateSchedule = async () => {
-    setScheduleSaving(true);
-    try {
-      const updated = await apiFetch<Schedule>('/schedule', {
-        method: 'POST',
-        body: JSON.stringify({ interval_minutes: intervalMinutes }),
-      });
-      setSchedule(updated);
-      await loadCoreData();
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Failed to update schedule');
-    } finally {
-      setScheduleSaving(false);
-    }
-  };
-
-  const uniqueDomains = useMemo(() => {
-    const values = new Set<string>();
-    domains.forEach((domain) => values.add(domain.domain));
-    items?.items.forEach((item) => values.add(item.source_domain));
-    return Array.from(values).sort((a, b) => a.localeCompare(b));
-  }, [domains, items]);
-
-  const handleSort = (column: 'timestamp' | 'points' | 'comments' | 'title') => {
-    if (sortBy === column) {
-      setSortOrder((prev) => (prev === 'desc' ? 'asc' : 'desc'));
-      return;
-    }
-    setSortBy(column);
-    setSortOrder('desc');
-  };
-
-  const SortIcon = ({ column }: { column: string }) => {
-    if (sortBy !== column) return <ChevronDown className="h-3 w-3 text-muted/40" />;
-    return sortOrder === 'asc'
-      ? <ChevronUp className="h-3 w-3 text-accent" />
-      : <ChevronDown className="h-3 w-3 text-accent" />;
-  };
+  const filteredResults = useMemo(() => {
+    if (!search) return RESULTS;
+    const q = search.toLowerCase();
+    return RESULTS.filter(
+      (r) => r.title.toLowerCase().includes(q) || r.source.toLowerCase().includes(q),
+    );
+  }, [search]);
 
   return (
-    <main className="relative min-h-dvh pb-12">
-      <div className="relative z-10 mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-10">
+    <div className="flex h-dvh bg-[var(--bg)]">
+      {/* ── Sidebar ──────────────────────────────── */}
+      <aside className="hidden w-[240px] flex-shrink-0 flex-col border-r border-[var(--border)] lg:flex">
+        {/* Logo */}
+        <div className="flex items-center gap-2.5 px-5 py-5">
+          <Radar className="h-5 w-5 text-[var(--accent)]" />
+          <span className="font-display text-[15px] font-semibold tracking-tight">
+            ScrapePilot
+          </span>
+        </div>
 
-        {/* ═══ HEADER ═══ */}
-        <header className="animate-rise cyber-panel glow-top overflow-hidden rounded-lg border border-border/50 bg-panel/60 p-6 shadow-glow backdrop-blur-xl">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-md border border-accent/30 bg-accent/10 shadow-neon">
-                  <Terminal className="h-5 w-5 text-accent" />
-                </div>
-                <div>
-                  <h1 className="font-display text-2xl font-bold tracking-tight text-text sm:text-3xl">
-                    ScrapePilot
-                  </h1>
-                  <p className="font-mono text-[10px] uppercase tracking-[0.25em] text-accent/60">
-                    command center v1.0
-                  </p>
-                </div>
-              </div>
-              <p className="mt-3 max-w-xl text-pretty text-sm text-muted">
-                Real-time extraction pipeline with trend intelligence, source analytics, and export-ready data feeds.
-              </p>
+        {/* Main nav */}
+        <nav className="flex-1 space-y-0.5 px-3">
+          {NAV.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              className={cn(
+                'flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] transition-colors',
+                item.active
+                  ? 'bg-[var(--accent-subtle)] font-medium text-[var(--accent)]'
+                  : 'text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]',
+              )}
+            >
+              <item.icon className="h-4 w-4" />
+              {item.label}
+            </button>
+          ))}
+        </nav>
+
+        {/* Bottom nav */}
+        <div className="border-t border-[var(--border)] px-3 py-2 space-y-0.5">
+          {NAV_BOTTOM.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+            >
+              <item.icon className="h-4 w-4" />
+              {item.label}
+            </button>
+          ))}
+        </div>
+
+        {/* User */}
+        <div className="border-t border-[var(--border)] px-3 py-3">
+          <div className="flex items-center gap-3 rounded-md px-2.5 py-1.5">
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-orange-600 text-[10px] font-bold text-black">
+              JP
             </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={runScrape}
-                disabled={isRunning || status?.is_running}
-                className={cn(
-                  'group inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 font-mono text-xs font-medium uppercase tracking-wider transition-all duration-200',
-                  isRunning || status?.is_running
-                    ? 'border-accent/40 bg-accent/10 text-accent shadow-neon'
-                    : 'border-accent/50 bg-accent/10 text-accent hover:bg-accent/20 hover:shadow-neon',
-                  'disabled:cursor-not-allowed'
-                )}
-              >
-                {isRunning || status?.is_running ? (
-                  <RefreshCcw className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Play className="h-3.5 w-3.5" />
-                )}
-                {isRunning || status?.is_running ? 'Scraping...' : 'Run Scrape'}
-              </button>
-
-              <div className="flex items-center gap-1">
-                <a
-                  href={`${API_BASE}/export/csv`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-border/50 bg-surface/40 px-3 py-2.5 font-mono text-[11px] uppercase tracking-wider text-muted transition hover:border-accent/30 hover:text-text"
-                >
-                  <ArrowDownToLine className="h-3 w-3" /> CSV
-                </a>
-                <a
-                  href={`${API_BASE}/export/json`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-border/50 bg-surface/40 px-3 py-2.5 font-mono text-[11px] uppercase tracking-wider text-muted transition hover:border-accent/30 hover:text-text"
-                >
-                  <ArrowDownToLine className="h-3 w-3" /> JSON
-                </a>
-              </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[13px] font-medium">John Parker</p>
+              <p className="truncate text-[11px] text-[var(--text-muted)]">Pro Plan</p>
             </div>
           </div>
+        </div>
+      </aside>
 
-          <div className="mt-5">
-            <StatusPill status={status} />
+      {/* ── Main Content ─────────────────────────── */}
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Top bar */}
+        <header className="flex items-center justify-between border-b border-[var(--border)] px-6 py-3">
+          {/* Mobile logo */}
+          <div className="flex items-center gap-2.5 lg:hidden">
+            <Radar className="h-5 w-5 text-[var(--accent)]" />
+            <span className="font-display text-[15px] font-semibold">ScrapePilot</span>
           </div>
-          {error ? (
-            <div className="mt-4 rounded-md border border-danger/30 bg-danger/5 px-3 py-2">
-              <p className="font-mono text-xs text-danger">{error}</p>
-            </div>
-          ) : null}
+
+          {/* Desktop breadcrumb */}
+          <div className="hidden items-center gap-3 lg:flex">
+            <h1 className="font-display text-[15px] font-semibold">Dashboard</h1>
+            <span className="rounded-full bg-[var(--success-subtle)] px-2.5 py-0.5 text-[11px] font-medium text-[var(--success)]">
+              3 jobs running
+            </span>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 rounded-md bg-[var(--accent)] px-3.5 py-1.5 text-[13px] font-medium text-black transition-colors hover:bg-[var(--accent-hover)]"
+            >
+              <Play className="h-3.5 w-3.5" />
+              Run Now
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--surface)] px-3.5 py-1.5 text-[13px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Export
+            </button>
+          </div>
         </header>
 
-        {/* ═══ METRICS ═══ */}
-        <section className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4" aria-label="Key metrics">
-          {bootLoading
-            ? Array.from({ length: 4 }).map((_, index) => (
-                <Skeleton key={index} className="h-[130px] rounded-lg" />
-              ))
-            : summary?.cards.map((card, index) => (
-                <div key={card.id} className="animate-rise" style={{ animationDelay: `${index * 80}ms` }}>
-                  <MetricCard card={card} delayMs={index * 80} />
-                </div>
-              ))}
-        </section>
+        {/* Scrollable content */}
+        <main className="flex-1 overflow-auto">
+          <div className="mx-auto max-w-[1200px] space-y-6 px-6 py-6">
 
-        {/* ═══ CHARTS ROW ═══ */}
-        <section className="mt-5 grid grid-cols-1 gap-3 xl:grid-cols-12" aria-label="Analytics charts">
-          {/* Trending Topics */}
-          <div
-            className="animate-rise cyber-panel glow-top overflow-hidden rounded-lg border border-border/50 bg-panel/60 p-5 shadow-panel backdrop-blur-sm xl:col-span-8"
-            style={{ animationDelay: '80ms' }}
-          >
-            <SectionHeader icon={Zap} title="Signal Feed" subtitle="trending keywords over time" />
-            <div className="h-[300px]">
-              {bootLoading ? (
-                <Skeleton className="h-full" />
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={trending?.points ?? []} margin={{ top: 10, right: 16, left: -12, bottom: 0 }}>
-                    <CartesianGrid stroke="oklch(0.24 0.025 220 / 0.4)" strokeDasharray="4 8" />
-                    <XAxis
-                      dataKey="time"
-                      tick={{ fill: 'oklch(0.48 0.02 220)', fontSize: 10, fontFamily: 'var(--font-mono)' }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      allowDecimals={false}
-                      tick={{ fill: 'oklch(0.48 0.02 220)', fontSize: 10, fontFamily: 'var(--font-mono)' }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <Tooltip content={<ChartTooltip />} />
-                    {(trending?.topics ?? []).map((topic, index) => (
-                      <Line
-                        key={topic}
-                        type="monotone"
-                        dataKey={topic}
-                        stroke={TOPIC_COLORS[index % TOPIC_COLORS.length]}
-                        strokeWidth={2}
-                        dot={{ r: 2, strokeWidth: 0, fill: TOPIC_COLORS[index % TOPIC_COLORS.length] }}
-                        activeDot={{ r: 5, strokeWidth: 2, stroke: 'oklch(0.09 0.015 220)' }}
-                        isAnimationActive
-                        animationDuration={800}
-                        animationBegin={index * 150}
+            {/* ── Stat Cards ───────────────────────── */}
+            <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              {STATS.map((stat, i) => {
+                const Icon = stat.icon;
+                return (
+                  <div
+                    key={stat.label}
+                    className="animate-fade-in-up rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5 transition-colors hover:border-[var(--text-muted)]/20"
+                    style={{ animationDelay: `${80 + i * 60}ms` }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+                        {stat.label}
+                      </span>
+                      <Icon className="h-4 w-4 text-[var(--text-muted)]" />
+                    </div>
+                    <p className="mt-2 font-display text-2xl font-semibold tracking-tight">
+                      {stat.value}
+                    </p>
+                    <div className="mt-1 flex items-center gap-1">
+                      <ArrowUpRight className="h-3 w-3 text-[var(--success)]" />
+                      <span className="text-[12px] text-[var(--success)]">{stat.change}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </section>
+
+            {/* ── Chart + Jobs ──────────────────────── */}
+            <section
+              className="animate-fade-in-up grid gap-4 lg:grid-cols-3"
+              style={{ animationDelay: '360ms' }}
+            >
+              {/* Volume Chart */}
+              <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5 lg:col-span-2">
+                <div className="mb-5 flex items-center justify-between">
+                  <div>
+                    <h2 className="font-display text-[13px] font-semibold">Scraping Volume</h2>
+                    <p className="mt-0.5 text-[12px] text-[var(--text-muted)]">Records collected over 7 days</p>
+                  </div>
+                  <span className="rounded-md bg-[var(--accent-subtle)] px-2 py-1 text-[11px] font-medium text-[var(--accent)]">
+                    +15.2% this week
+                  </span>
+                </div>
+                <div className="h-52">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={VOLUME_DATA} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="volumeGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.2} />
+                          <stop offset="100%" stopColor="var(--accent)" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <XAxis
+                        dataKey="day"
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                        dy={8}
                       />
-                    ))}
-                  </LineChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-          </div>
-
-          {/* Top Sources */}
-          <div
-            className="animate-rise cyber-panel glow-top overflow-hidden rounded-lg border border-border/50 bg-panel/60 p-5 shadow-panel backdrop-blur-sm xl:col-span-4"
-            style={{ animationDelay: '130ms' }}
-          >
-            <SectionHeader icon={Database} title="Source Map" subtitle="active domain distribution" />
-            <div className="h-[300px]">
-              {bootLoading ? (
-                <Skeleton className="h-full" />
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={domains} layout="vertical" margin={{ top: 4, right: 8, left: 30, bottom: 0 }}>
-                    <CartesianGrid stroke="oklch(0.24 0.025 220 / 0.3)" strokeDasharray="4 8" horizontal={false} />
-                    <XAxis
-                      type="number"
-                      allowDecimals={false}
-                      tick={{ fill: 'oklch(0.48 0.02 220)', fontSize: 10, fontFamily: 'var(--font-mono)' }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      dataKey="domain"
-                      type="category"
-                      width={110}
-                      tick={{ fill: 'oklch(0.48 0.02 220)', fontSize: 10, fontFamily: 'var(--font-mono)' }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <Tooltip content={<ChartTooltip />} />
-                    <Bar
-                      dataKey="count"
-                      fill="oklch(0.78 0.16 195 / 0.7)"
-                      radius={[0, 4, 4, 0]}
-                      isAnimationActive
-                      animationDuration={900}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-          </div>
-        </section>
-
-        {/* ═══ DATA TABLE + SIDEBAR ═══ */}
-        <section className="mt-5 grid grid-cols-1 gap-3 xl:grid-cols-12" aria-label="Data and controls">
-          {/* Data Table */}
-          <div
-            className="animate-rise cyber-panel glow-top overflow-hidden rounded-lg border border-border/50 bg-panel/60 p-5 shadow-panel backdrop-blur-sm xl:col-span-8"
-            style={{ animationDelay: '200ms' }}
-          >
-            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-              <SectionHeader icon={Terminal} title="Data Feed" subtitle="extracted records" />
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted/50" />
-                  <input
-                    value={searchInput}
-                    onChange={(event) => setSearchInput(event.target.value)}
-                    placeholder="grep headline..."
-                    className="w-full rounded-lg border border-border/50 bg-surface/50 py-2 pl-9 pr-3 font-mono text-xs text-text outline-none placeholder:text-muted/40 focus:border-accent/50 focus:shadow-glow-sm sm:w-[200px]"
-                  />
+                      <YAxis hide />
+                      <Tooltip content={<ChartTooltip />} cursor={false} />
+                      <Area
+                        type="monotone"
+                        dataKey="records"
+                        stroke="var(--accent)"
+                        strokeWidth={2}
+                        fill="url(#volumeGrad)"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
                 </div>
-                <select
-                  value={sourceFilter}
-                  onChange={(event) => setSourceFilter(event.target.value)}
-                  className="rounded-lg border border-border/50 bg-surface/50 px-3 py-2 font-mono text-xs text-text outline-none focus:border-accent/50"
-                >
-                  <option value="all">all sources</option>
-                  {uniqueDomains.map((domain) => (
-                    <option key={domain} value={domain}>
-                      {domain}
-                    </option>
-                  ))}
-                </select>
               </div>
-            </div>
 
-            <div className="mt-4 overflow-hidden rounded-lg border border-border/40">
-              <div className="max-h-[420px] overflow-auto">
-                <table className="min-w-full divide-y divide-border/30 text-xs">
-                  <thead className="sticky top-0 z-10 bg-surface/95 backdrop-blur-md">
-                    <tr className="font-mono text-[10px] uppercase tracking-[0.15em] text-muted/70">
-                      <th className="px-4 py-3 text-left">
-                        <button type="button" onClick={() => handleSort('title')} className="inline-flex items-center gap-1 transition hover:text-accent">
-                          Headline <SortIcon column="title" />
-                        </button>
-                      </th>
-                      <th className="px-3 py-3 text-left">Source</th>
-                      <th className="px-3 py-3 text-right">
-                        <button type="button" onClick={() => handleSort('points')} className="inline-flex items-center gap-1 transition hover:text-accent">
-                          Pts <SortIcon column="points" />
-                        </button>
-                      </th>
-                      <th className="px-3 py-3 text-right">
-                        <button type="button" onClick={() => handleSort('comments')} className="inline-flex items-center gap-1 transition hover:text-accent">
-                          Cmt <SortIcon column="comments" />
-                        </button>
-                      </th>
-                      <th className="px-4 py-3 text-right">
-                        <button type="button" onClick={() => handleSort('timestamp')} className="inline-flex items-center gap-1 transition hover:text-accent">
-                          Time <SortIcon column="timestamp" />
-                        </button>
-                      </th>
+              {/* Active Jobs */}
+              <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="font-display text-[13px] font-semibold">Active Jobs</h2>
+                  <span className="text-[12px] text-[var(--text-muted)]">{JOBS.length} total</span>
+                </div>
+                <div className="space-y-0.5">
+                  {JOBS.map((job) => (
+                    <div
+                      key={job.name}
+                      className="flex items-center gap-3 rounded-md px-3 py-2.5 transition-colors hover:bg-[var(--surface-hover)]"
+                    >
+                      <StatusDot status={job.status} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[13px] font-medium">{job.name}</p>
+                        <p className="text-[11px] text-[var(--text-muted)]">{job.lastRun}</p>
+                      </div>
+                      <span className="font-mono text-[11px] text-[var(--text-muted)]">
+                        {job.records.toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            {/* ── Results Table ─────────────────────── */}
+            <section
+              className="animate-fade-in-up rounded-lg border border-[var(--border)] bg-[var(--surface)]"
+              style={{ animationDelay: '460ms' }}
+            >
+              <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-3.5">
+                <h2 className="font-display text-[13px] font-semibold">Recent Results</h2>
+                <div className="flex items-center gap-2.5">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--text-muted)]" />
+                    <input
+                      type="text"
+                      placeholder="Search results..."
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="h-8 w-52 rounded-md border border-[var(--border)] bg-[var(--bg)] pl-8 pr-3 text-[12px] text-[var(--text)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:outline-none transition-colors"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border)] px-2.5 py-1.5 text-[12px] text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+                  >
+                    <Download className="h-3 w-3" />
+                    CSV
+                  </button>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-[var(--border)]">
+                      <th className="px-5 py-2.5 text-left text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Title</th>
+                      <th className="px-5 py-2.5 text-left text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Source</th>
+                      <th className="px-5 py-2.5 text-right text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Points</th>
+                      <th className="px-5 py-2.5 text-right text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Comments</th>
+                      <th className="px-5 py-2.5 text-right text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Time</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-border/20">
-                    {tableLoading
-                      ? Array.from({ length: 8 }).map((_, index) => (
-                          <tr key={index}>
-                            <td colSpan={5} className="px-4 py-2">
-                              <Skeleton className="h-9" />
-                            </td>
-                          </tr>
-                        ))
-                      : items?.items.map((item) => (
-                          <tr key={item.id} className="group transition-colors hover:bg-accent/[0.03]">
-                            <td className="px-4 py-2.5">
-                              <a
-                                href={item.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-start gap-1.5 text-pretty text-text transition hover:text-accent"
-                              >
-                                <span className="line-clamp-2 text-[13px] leading-snug">{item.title}</span>
-                                <ExternalLink className="mt-0.5 h-3 w-3 shrink-0 text-muted/30 transition group-hover:text-accent/50" />
-                              </a>
-                            </td>
-                            <td className="px-3 py-2.5">
-                              <span className="data-mono text-muted/70">{item.source_domain}</span>
-                            </td>
-                            <td className="px-3 py-2.5 text-right">
-                              <span className="data-mono text-accent/80">{item.points}</span>
-                            </td>
-                            <td className="px-3 py-2.5 text-right">
-                              <span className="data-mono text-text/60">{item.comments}</span>
-                            </td>
-                            <td className="px-4 py-2.5 text-right">
-                              <span className="data-mono text-muted/60">{formatDate(item.timestamp)}</span>
-                            </td>
-                          </tr>
-                        ))}
+                  <tbody className="divide-y divide-[var(--border-subtle)]">
+                    {filteredResults.map((row) => (
+                      <tr key={row.id} className="transition-colors hover:bg-[var(--surface-hover)]">
+                        <td className="max-w-md px-5 py-3">
+                          <span className="line-clamp-1 text-[13px] font-medium">{row.title}</span>
+                        </td>
+                        <td className="whitespace-nowrap px-5 py-3 text-[12px] text-[var(--text-muted)]">
+                          {row.source}
+                        </td>
+                        <td className="whitespace-nowrap px-5 py-3 text-right font-mono text-[12px] text-[var(--text-secondary)]">
+                          {row.points}
+                        </td>
+                        <td className="whitespace-nowrap px-5 py-3 text-right font-mono text-[12px] text-[var(--text-secondary)]">
+                          {row.comments}
+                        </td>
+                        <td className="whitespace-nowrap px-5 py-3 text-right text-[12px] text-[var(--text-muted)]">
+                          {row.time}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
-            </div>
-            <p className="mt-2 font-mono text-[10px] uppercase tracking-wider text-muted/50">
-              {items?.items.length ?? 0} / {items?.total ?? 0} records loaded
-            </p>
-          </div>
-
-          {/* Sidebar: History + Scheduler */}
-          <div className="animate-rise space-y-3 xl:col-span-4" style={{ animationDelay: '240ms' }}>
-            {/* Run History */}
-            <article className="cyber-panel glow-top overflow-hidden rounded-lg border border-border/50 bg-panel/60 p-5 shadow-panel backdrop-blur-sm">
-              <div className="flex items-center justify-between gap-3">
-                <SectionHeader icon={CalendarClock} title="Run History" subtitle="pipeline execution log" />
-              </div>
-
-              <div className="mb-3 flex items-center gap-3">
-                <div className="flex items-center gap-1.5">
-                  <span className="inline-block h-2 w-2 rounded-full bg-success shadow-neon-green" />
-                  <span className="font-mono text-[10px] uppercase tracking-wider text-success">
-                    {history?.success_rate.toFixed(0) ?? '0'}% pass
-                  </span>
-                </div>
-                <span className="h-3 w-px bg-border/40" />
-                <span className="font-mono text-[10px] text-muted/50">
-                  {history?.runs.length ?? 0} runs
+              <div className="flex items-center justify-between border-t border-[var(--border)] px-5 py-2.5">
+                <span className="text-[11px] text-[var(--text-muted)]">
+                  Showing {filteredResults.length} of {RESULTS.length} results
+                </span>
+                <span className="text-[11px] text-[var(--text-muted)]">
+                  Updated 2 minutes ago
                 </span>
               </div>
+            </section>
 
-              <div className="space-y-1.5">
-                {(history?.runs ?? []).slice(0, 7).map((run) => (
-                  <div key={run.id} className="group flex items-center gap-3 rounded-md border border-border/30 bg-surface/30 px-3 py-2 transition hover:border-accent/20">
-                    <span className={cn(
-                      'inline-block h-1.5 w-1.5 rounded-full',
-                      run.status === 'success' ? 'bg-success shadow-neon-green' : run.status === 'failed' ? 'bg-danger shadow-neon-danger' : 'bg-muted/40'
-                    )} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between">
-                        <span className="data-mono text-xs text-text/80">#{run.id}</span>
-                        <span className={cn(
-                          'data-mono text-[10px] uppercase tracking-wider',
-                          run.status === 'success' ? 'text-success' : run.status === 'failed' ? 'text-danger' : 'text-muted'
-                        )}>
-                          {run.status}
+            {/* ── Bottom Row: Sources + Schedule ────── */}
+            <section
+              className="animate-fade-in-up grid gap-4 lg:grid-cols-2"
+              style={{ animationDelay: '560ms' }}
+            >
+              {/* Top Sources */}
+              <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5">
+                <h2 className="mb-4 font-display text-[13px] font-semibold">Top Sources</h2>
+                <div className="space-y-3.5">
+                  {DOMAINS.map((d) => (
+                    <div key={d.domain} className="flex items-center gap-4">
+                      <span className="w-40 truncate text-[12px] text-[var(--text-secondary)]">
+                        {d.domain}
+                      </span>
+                      <div className="h-1.5 flex-1 rounded-full bg-[var(--border)]">
+                        <div
+                          className="h-full rounded-full bg-[var(--accent)] transition-all"
+                          style={{ width: `${(d.count / MAX_DOMAIN_COUNT) * 100}%` }}
+                        />
+                      </div>
+                      <span className="w-14 text-right font-mono text-[11px] text-[var(--text-muted)]">
+                        {(d.count / 1000).toFixed(1)}k
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Scheduled Runs */}
+              <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)]">
+                <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-3.5">
+                  <h2 className="font-display text-[13px] font-semibold">Scheduled Runs</h2>
+                  <Calendar className="h-4 w-4 text-[var(--text-muted)]" />
+                </div>
+                <div className="divide-y divide-[var(--border-subtle)]">
+                  {SCHEDULE.map((s) => (
+                    <div
+                      key={s.name}
+                      className="flex items-center justify-between px-5 py-3 transition-colors hover:bg-[var(--surface-hover)]"
+                    >
+                      <div>
+                        <p className="text-[13px] font-medium">{s.name}</p>
+                        <p className="text-[11px] text-[var(--text-muted)]">{s.interval}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-[12px] text-[var(--text-muted)]">
+                          Next: {s.nextRun}
+                        </span>
+                        <span
+                          className={cn(
+                            'inline-flex h-5 items-center rounded-full px-2 text-[10px] font-medium',
+                            s.active
+                              ? 'bg-[var(--success-subtle)] text-[var(--success)]'
+                              : 'bg-zinc-500/10 text-zinc-500',
+                          )}
+                        >
+                          {s.active ? 'Active' : 'Paused'}
                         </span>
                       </div>
-                      <p className="data-mono mt-0.5 text-[10px] text-muted/50">
-                        {run.item_count} items &middot; {formatDate(run.completed_at)}
-                      </p>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </article>
-
-            {/* Scheduler */}
-            <article className="cyber-panel glow-top overflow-hidden rounded-lg border border-border/50 bg-panel/60 p-5 shadow-panel backdrop-blur-sm">
-              <SectionHeader icon={SlidersHorizontal} title="Scheduler" subtitle="automation config" />
-
-              <div className="space-y-3">
-                <div>
-                  <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-[0.15em] text-muted/60">
-                    Interval (minutes)
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={1440}
-                    value={intervalMinutes}
-                    onChange={(event) => setIntervalMinutes(Number(event.target.value || 15))}
-                    className="data-mono w-full rounded-lg border border-border/50 bg-surface/40 px-3 py-2 text-sm text-text outline-none transition focus:border-accent/50 focus:shadow-glow-sm"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={updateSchedule}
-                  disabled={scheduleSaving}
-                  className="w-full rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 font-mono text-xs font-medium uppercase tracking-wider text-accent transition hover:bg-accent/20 hover:shadow-neon disabled:opacity-50"
-                >
-                  {scheduleSaving ? 'Saving...' : 'Update Schedule'}
-                </button>
-                <div className="space-y-1 rounded-md border border-border/30 bg-surface/20 p-2.5">
-                  <p className="flex items-center justify-between">
-                    <span className="font-mono text-[10px] text-muted/50">current</span>
-                    <span className="data-mono text-xs text-text/70">{schedule?.interval_minutes ?? 15}m</span>
-                  </p>
-                  <p className="flex items-center justify-between">
-                    <span className="font-mono text-[10px] text-muted/50">next_run</span>
-                    <span className="data-mono text-xs text-text/70">{formatDate(schedule?.next_run_at ?? status?.next_run_at ?? null)}</span>
-                  </p>
+                  ))}
                 </div>
               </div>
-            </article>
+            </section>
           </div>
-        </section>
-
-        {/* ═══ FOOTER ═══ */}
-        <footer className="mt-8 flex items-center justify-center gap-2 text-center font-mono text-[10px] uppercase tracking-[0.25em] text-muted/30">
-          <span className="inline-block h-px w-8 bg-border/30" />
-          ScrapePilot // Built with Next.js + FastAPI
-          <span className="inline-block h-px w-8 bg-border/30" />
-        </footer>
+        </main>
       </div>
-    </main>
+    </div>
   );
 }

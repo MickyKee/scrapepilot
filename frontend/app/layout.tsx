@@ -8,8 +8,8 @@ const spaceGrotesk = Space_Grotesk({ subsets: ['latin'], variable: '--font-displ
 const jetbrainsMono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-mono' });
 
 export const metadata: Metadata = {
-  title: 'ScrapePilot // Command Center',
-  description: 'Cyberpunk web scraping analytics dashboard',
+  title: 'ScrapePilot — Web Scraping Dashboard',
+  description: 'Monitor, schedule, and analyze your web scraping pipelines in real time.',
 };
 
 export default function RootLayout({

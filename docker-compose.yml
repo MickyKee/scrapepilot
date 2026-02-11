@@ -1,0 +1,31 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    container_name: scrapepilot-api
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: sqlite:///./data/scrapepilot.db
+      SCRAPER_PAGES: 2
+      SCRAPER_REQUEST_DELAY_MS: 900
+      SCRAPE_INTERVAL_MINUTES: 15
+      ALLOWED_ORIGINS: http://localhost:3000
+    volumes:
+      - scrapepilot-data:/app/data
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: scrapepilot-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    depends_on:
+      - api
+
+volumes:
+  scrapepilot-data:

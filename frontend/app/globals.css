@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --surface: 0.18 0.021 262;
+  --panel: 0.23 0.024 262;
+  --border: 0.35 0.03 260;
+  --text: 0.95 0.012 255;
+  --muted: 0.72 0.02 255;
+  --accent: 0.74 0.19 248;
+  --success: 0.78 0.17 154;
+  --danger: 0.65 0.22 25;
+}
+
+* {
+  border-color: oklch(var(--border) / 1);
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  color: oklch(var(--text) / 1);
+  background:
+    radial-gradient(1200px 700px at 90% -10%, oklch(0.48 0.2 250 / 0.12), transparent),
+    radial-gradient(1000px 650px at -15% -20%, oklch(0.45 0.13 170 / 0.14), transparent),
+    linear-gradient(165deg, oklch(0.16 0.02 262), oklch(0.18 0.022 262) 42%, oklch(0.15 0.018 262));
+  font-family: var(--font-inter), sans-serif;
+}
+
+main::before {
+  content: '';
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  background-image: linear-gradient(oklch(0.95 0.01 250 / 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(0.95 0.01 250 / 0.035) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: radial-gradient(circle at 50% 20%, black 0, black 35%, transparent 80%);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: oklch(0.35 0.03 260 / 0.7);
+}

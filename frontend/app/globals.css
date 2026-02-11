@@ -3,14 +3,16 @@
 @tailwind utilities;
 
 :root {
-  --surface: 0.18 0.021 262;
-  --panel: 0.23 0.024 262;
-  --border: 0.35 0.03 260;
-  --text: 0.95 0.012 255;
-  --muted: 0.72 0.02 255;
-  --accent: 0.74 0.19 248;
-  --success: 0.78 0.17 154;
-  --danger: 0.65 0.22 25;
+  --surface: 0.09 0.015 220;
+  --panel: 0.14 0.02 220;
+  --border: 0.24 0.025 220;
+  --text: 0.95 0.005 220;
+  --muted: 0.48 0.02 220;
+  --accent: 0.78 0.16 195;
+  --accent2: 0.80 0.17 155;
+  --success: 0.80 0.19 150;
+  --danger: 0.68 0.24 20;
+  --warning: 0.78 0.15 75;
 }
 
 * {
@@ -22,29 +24,200 @@ body {
   min-height: 100dvh;
   color: oklch(var(--text) / 1);
   background:
-    radial-gradient(1200px 700px at 90% -10%, oklch(0.48 0.2 250 / 0.12), transparent),
-    radial-gradient(1000px 650px at -15% -20%, oklch(0.45 0.13 170 / 0.14), transparent),
-    linear-gradient(165deg, oklch(0.16 0.02 262), oklch(0.18 0.022 262) 42%, oklch(0.15 0.018 262));
-  font-family: var(--font-inter), sans-serif;
+    radial-gradient(ellipse 1400px 800px at 80% -15%, oklch(0.35 0.14 195 / 0.10), transparent),
+    radial-gradient(ellipse 900px 600px at -10% 80%, oklch(0.30 0.12 155 / 0.08), transparent),
+    radial-gradient(ellipse 600px 400px at 50% 50%, oklch(0.12 0.02 220 / 0.5), transparent),
+    linear-gradient(175deg, oklch(0.06 0.015 220), oklch(0.08 0.018 220) 40%, oklch(0.05 0.012 220));
+  background-attachment: fixed;
+  font-family: var(--font-inter), system-ui, sans-serif;
 }
 
+/* ── Grid overlay ─────────────────────────── */
 main::before {
   content: '';
   pointer-events: none;
   position: fixed;
   inset: 0;
-  background-image: linear-gradient(oklch(0.95 0.01 250 / 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, oklch(0.95 0.01 250 / 0.035) 1px, transparent 1px);
-  background-size: 40px 40px;
-  mask-image: radial-gradient(circle at 50% 20%, black 0, black 35%, transparent 80%);
+  z-index: 0;
+  background-image:
+    linear-gradient(oklch(0.78 0.16 195 / 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(0.78 0.16 195 / 0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 20%, black 0%, transparent 100%);
 }
 
+/* ── Scanline overlay ─────────────────────── */
+main::after {
+  content: '';
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    oklch(0.05 0.01 220 / 0.12) 2px,
+    oklch(0.05 0.01 220 / 0.12) 4px
+  );
+  mix-blend-mode: multiply;
+}
+
+/* ── Cyberpanel decorations ───────────────── */
+.cyber-panel {
+  position: relative;
+}
+
+.cyber-panel::before,
+.cyber-panel::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.cyber-panel::before {
+  top: -1px;
+  left: -1px;
+  border-top: 2px solid oklch(var(--accent) / 0.7);
+  border-left: 2px solid oklch(var(--accent) / 0.7);
+}
+
+.cyber-panel::after {
+  bottom: -1px;
+  right: -1px;
+  border-bottom: 2px solid oklch(var(--accent) / 0.7);
+  border-right: 2px solid oklch(var(--accent) / 0.7);
+}
+
+/* ── Glow line at top of panels ───────────── */
+.glow-top {
+  position: relative;
+}
+
+.glow-top::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 16px;
+  right: 16px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    oklch(var(--accent) / 0.6) 20%,
+    oklch(var(--accent) / 0.9) 50%,
+    oklch(var(--accent) / 0.6) 80%,
+    transparent
+  );
+  pointer-events: none;
+}
+
+/* ── Terminal section label ───────────────── */
+.section-label {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.625rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: oklch(var(--accent) / 0.7);
+}
+
+.section-label::before {
+  content: '// ';
+  opacity: 0.5;
+}
+
+/* ── Neon text glow ───────────────────────── */
+.neon-text {
+  text-shadow:
+    0 0 7px oklch(var(--accent) / 0.4),
+    0 0 20px oklch(var(--accent) / 0.15);
+}
+
+/* ── Data mono styling ────────────────────── */
+.data-mono {
+  font-family: var(--font-mono), monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Scrollbar ────────────────────────────── */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: oklch(0.08 0.01 220);
 }
 
 ::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: oklch(0.35 0.03 260 / 0.7);
+  background: oklch(0.78 0.16 195 / 0.3);
+  border: 2px solid oklch(0.08 0.01 220);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.78 0.16 195 / 0.5);
+}
+
+/* ── Selection ────────────────────────────── */
+::selection {
+  background: oklch(0.78 0.16 195 / 0.3);
+  color: oklch(var(--text) / 1);
+}
+
+/* ── Focus ring ───────────────────────────── */
+:focus-visible {
+  outline: 2px solid oklch(var(--accent) / 0.6);
+  outline-offset: 2px;
+}
+
+/* ── Spring-inspired transition curve ─────── */
+.transition-spring {
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Cyber-panel hover glow ───────────────── */
+.cyber-panel {
+  transition: border-color 250ms cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 400ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.cyber-panel:hover::before,
+.cyber-panel:hover::after {
+  opacity: 0.8;
+}
+
+/* ── Table row hover glow bar ─────────────── */
+tbody tr {
+  transition: background-color 200ms ease;
+}
+
+tbody tr:hover {
+  background: oklch(0.78 0.16 195 / 0.03);
+}
+
+/* ── Button press feedback ────────────────── */
+button:active:not(:disabled) {
+  transform: scale(0.97);
+  transition: transform 100ms ease;
+}
+
+/* ── Input glow on focus ──────────────────── */
+input:focus,
+select:focus {
+  box-shadow: 0 0 0 1px oklch(var(--accent) / 0.3),
+              0 0 12px -2px oklch(var(--accent) / 0.15);
+}
+
+/* ── Vignette overlay for depth ───────────── */
+body::after {
+  content: '';
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: radial-gradient(ellipse at center, transparent 40%, oklch(0.03 0.01 220 / 0.5) 100%);
 }

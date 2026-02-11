@@ -10,9 +10,9 @@ const trendMap = {
 };
 
 const trendStyle = {
-  up: 'text-success',
-  down: 'text-danger',
-  flat: 'text-muted',
+  up: 'text-success border-success/30 bg-success/5',
+  down: 'text-danger border-danger/30 bg-danger/5',
+  flat: 'text-muted border-border/50 bg-surface/30',
 };
 
 export function MetricCard({ card, delayMs }: { card: StatCard; delayMs: number }) {
@@ -20,18 +20,22 @@ export function MetricCard({ card, delayMs }: { card: StatCard; delayMs: number 
 
   return (
     <article
-      className="rounded-2xl border border-border/80 bg-gradient-to-b from-panel to-panel/80 p-5 shadow-panel"
+      className="cyber-panel glow-top group relative overflow-hidden rounded-lg border border-border/60 bg-gradient-to-b from-panel/90 to-surface/60 p-5 shadow-panel transition-all duration-300 hover:border-accent/40 hover:shadow-glow-sm"
       style={{ animationDelay: `${delayMs}ms` }}
     >
-      <p className="text-xs uppercase tracking-[0.13em] text-muted">{card.label}</p>
-      <div className="mt-3 flex items-end justify-between gap-3">
-        <p className="text-3xl font-semibold tracking-tight text-text">{card.value}</p>
-        <div className={cn('flex items-center gap-1 rounded-full border px-2 py-1 text-xs', trendStyle[card.trend_direction])}>
+      <div className="absolute inset-0 overflow-hidden opacity-0 transition-opacity duration-500 group-hover:opacity-100">
+        <div className="absolute -top-full left-0 h-full w-full bg-gradient-to-b from-accent/5 to-transparent animate-scan" />
+      </div>
+
+      <p className="section-label relative z-10">{card.label}</p>
+      <div className="relative z-10 mt-3 flex items-end justify-between gap-3">
+        <p className="data-mono neon-text text-3xl font-bold tracking-tight text-text">{card.value}</p>
+        <div className={cn('flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium', trendStyle[card.trend_direction])}>
           <Icon className="h-3.5 w-3.5" />
-          <span>{formatPercent(card.trend_value)}</span>
+          <span className="data-mono">{formatPercent(card.trend_value)}</span>
         </div>
       </div>
-      <p className="mt-2 text-xs text-muted">{card.trend_label}</p>
+      <p className="relative z-10 mt-2 text-xs text-muted">{card.trend_label}</p>
     </article>
   );
 }
